@@ -1,6 +1,12 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
+
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+st.set_page_config(page_title="HAT – Tracking", layout="wide")
 
 # =====================================================
 # AUTH
@@ -9,13 +15,24 @@ if "login" not in st.session_state or not st.session_state.login:
     st.warning("Silakan login terlebih dahulu")
     st.stop()
 
-st.set_page_config(page_title="HAT – Tracking", layout="wide")
+# =====================================================
+# PATH (AMAN UNTUK DEPLOY)
+# =====================================================
+BASE_DIR = Path(__file__).parent.parent
+LOGO_PATH = BASE_DIR / "assets" / "logo.png"
 
 # =====================================================
 # SIDEBAR
 # =====================================================
-st.sidebar.image("assets/logo.png", use_container_width=True)
+if LOGO_PATH.exists():
+    st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+
 st.sidebar.markdown("### 📊 Navigasi")
+
+# Tombol manual refresh data (INI YANG BIKIN UPDATE LANGSUNG)
+if st.sidebar.button("🔄 Update Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 if st.sidebar.button("🚪 Logout"):
     st.session_state.clear()
@@ -32,14 +49,18 @@ CSV_URL = (
     f"{SPREADSHEET_ID}/export?format=csv&gid={SHEET_GID}"
 )
 
-@st.cache_data
+# =====================================================
+# LOAD DATA (CACHE + TTL)
+# =====================================================
+@st.cache_data(ttl=300)  # otomatis update maksimal tiap 5 menit
 def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
+
     df["CUSTOMER NO"] = df["CUSTOMER NO"].astype(str)
     df["ORDER STAR NO"] = df["ORDER STAR NO"].astype(str)
     df["ORDER NO"] = df["ORDER NO"].astype(str)
-    
+
     return df
 
 df = load_data()
@@ -51,7 +72,7 @@ def get_status(row):
     order_no = row["ORDER NO"]
     etd = row["ETD AHM"]
 
-    if pd.isna(etd) or etd == "":
+    if pd.isna(etd) or str(etd).strip() == "":
         if order_no.startswith("235"):
             return "🟢 Delivered"
         if order_no.startswith("125"):
@@ -69,6 +90,7 @@ df["Keterangan"] = df.apply(get_status, axis=1)
 if st.session_state.role == "ADMIN":
     st.sidebar.markdown("### 🔎 Pilih AHASS")
     ahass_list = sorted(df["CUSTOMER NO"].unique())
+
     selected_ahass = st.sidebar.selectbox(
         "AHASS", ["ALL AHASS"] + ahass_list
     )
@@ -86,8 +108,8 @@ else:
 # =====================================================
 st.title("📦 Fitur 1 – Tracking Online Hotline")
 st.caption(
-    f"📅 Data terakhir update: "
-    f"{datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    f"📅 Data terakhir ditarik: "
+    f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
 )
 
 # =====================================================
@@ -103,9 +125,16 @@ if selected_po != "ALL PO":
 # KPI
 # =====================================================
 c1, c2, c3 = st.columns(3)
+
 c1.metric("Total PO", df["ORDER STAR NO"].nunique())
-c2.metric("Delivered", df[df["Keterangan"].str.contains("Delivered")]["ORDER STAR NO"].nunique())
-c3.metric("Intransit", df[df["Keterangan"].str.contains("Intransit")]["ORDER STAR NO"].nunique())
+c2.metric(
+    "Delivered",
+    df[df["Keterangan"].str.contains("Delivered", na=False)]["ORDER STAR NO"].nunique()
+)
+c3.metric(
+    "Intransit",
+    df[df["Keterangan"].str.contains("Intransit", na=False)]["ORDER STAR NO"].nunique()
+)
 
 # =====================================================
 # TABLE
