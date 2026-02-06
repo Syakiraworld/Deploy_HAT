@@ -29,7 +29,7 @@ if LOGO_PATH.exists():
 
 st.sidebar.markdown("### 📊 Navigasi")
 
-# Tombol manual refresh data (INI YANG BIKIN UPDATE LANGSUNG)
+# Tombol manual refresh data
 if st.sidebar.button("🔄 Update Data"):
     st.cache_data.clear()
     st.rerun()
@@ -52,55 +52,50 @@ CSV_URL = (
 # =====================================================
 # LOAD DATA (CACHE + TTL)
 # =====================================================
-@st.cache_data(ttl=300)  # otomatis update maksimal tiap 5 menit
+@st.cache_data(ttl=300)  # update otomatis maksimal tiap 5 menit
 def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
 
-    df["CUSTOMER NO"] = df["CUSTOMER NO"].astype(str)
-    df["ORDER STAR NO"] = df["ORDER STAR NO"].astype(str)
-    df["ORDER NO"] = df["ORDER NO"].astype(str)
+    # ubah kolom penting jadi string supaya aman
+    if "CUSTOMER NO" in df.columns:
+        df["CUSTOMER NO"] = df["CUSTOMER NO"].astype(str)
+
+    if "ORDER STAR NO" in df.columns:
+        df["ORDER STAR NO"] = df["ORDER STAR NO"].astype(str)
+
+    if "DONO" in df.columns:
+        df["DONO"] = df["DONO"].astype(str)
 
     return df
 
+
 df = load_data()
-
-# =====================================================
-# STATUS LOGIC
-# =====================================================
-def get_status(row):
-    order_no = row["ORDER NO"]
-    etd = row["ETD AHM"]
-
-    if pd.isna(etd) or str(etd).strip() == "":
-        if order_no.startswith("235"):
-            return "🟢 Delivered"
-        if order_no.startswith("125"):
-            return "🔴 PO AHM"
-    else:
-        if order_no.startswith("125"):
-            return "🟡 Intransit"
-    return "-"
-
-df["Keterangan"] = df.apply(get_status, axis=1)
 
 # =====================================================
 # FILTER BY ROLE
 # =====================================================
 if st.session_state.role == "ADMIN":
     st.sidebar.markdown("### 🔎 Pilih AHASS")
-    ahass_list = sorted(df["CUSTOMER NO"].unique())
 
-    selected_ahass = st.sidebar.selectbox(
-        "AHASS", ["ALL AHASS"] + ahass_list
-    )
+    if "CUSTOMER NO" in df.columns:
+        ahass_list = sorted(df["CUSTOMER NO"].unique())
 
-    if selected_ahass != "ALL AHASS":
-        df = df[df["CUSTOMER NO"] == selected_ahass]
+        selected_ahass = st.sidebar.selectbox(
+            "AHASS", ["ALL AHASS"] + ahass_list
+        )
+
+        if selected_ahass != "ALL AHASS":
+            df = df[df["CUSTOMER NO"] == selected_ahass]
+    else:
+        st.sidebar.warning("⚠️ Kolom CUSTOMER NO tidak ditemukan di data.")
 
 else:
     cust_no = st.session_state.customer_no
-    df = df[df["CUSTOMER NO"] == cust_no]
+
+    if "CUSTOMER NO" in df.columns:
+        df = df[df["CUSTOMER NO"] == str(cust_no)]
+
     st.sidebar.info(f"🔒 AHASS: {cust_no}")
 
 # =====================================================
@@ -108,40 +103,27 @@ else:
 # =====================================================
 st.title("📦 Fitur 1 – Tracking Online Hotline")
 st.caption(
-    f"📅 Data terakhir ditarik: "
-    f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+    f"📅 Data terakhir ditarik: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
 )
 
 # =====================================================
-# FILTER PO
+# FILTER PO (ORDER STAR NO)
 # =====================================================
-po_list = sorted(df["ORDER STAR NO"].unique())
-selected_po = st.selectbox("Nomor PO", ["ALL PO"] + po_list)
+if "ORDER STAR NO" in df.columns:
+    po_list = sorted(df["ORDER STAR NO"].unique())
+    selected_po = st.selectbox("Nomor PO (ORDER STAR NO)", ["ALL PO"] + po_list)
 
-if selected_po != "ALL PO":
-    df = df[df["ORDER STAR NO"] == selected_po]
-
-# =====================================================
-# KPI
-# =====================================================
-c1, c2, c3 = st.columns(3)
-
-c1.metric("Total PO", df["ORDER STAR NO"].nunique())
-c2.metric(
-    "Delivered",
-    df[df["Keterangan"].str.contains("Delivered", na=False)]["ORDER STAR NO"].nunique()
-)
-c3.metric(
-    "Intransit",
-    df[df["Keterangan"].str.contains("Intransit", na=False)]["ORDER STAR NO"].nunique()
-)
+    if selected_po != "ALL PO":
+        df = df[df["ORDER STAR NO"] == selected_po]
+else:
+    st.warning("⚠️ Kolom ORDER STAR NO tidak ditemukan, filter PO tidak aktif.")
 
 # =====================================================
 # TABLE
 # =====================================================
 st.subheader("📋 Tabel Tracking")
 
-exclude = ["ORDER DATE", "ORDER STAR DATE", "PO NO", "PO dan ETD"]
+exclude = ["PO dan ETD"]  # kalau mau disembunyikan
 final_cols = [c for c in df.columns if c not in exclude]
 
 st.dataframe(df[final_cols], use_container_width=True)
